@@ -1,0 +1,175 @@
+---
+# Horizontal Pod Autoscaler for CPU/Memory
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: genai-api-hpa
+  namespace: genai-platform
+  labels:
+    app: genai-api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: genai-api
+  
+  # Min and max replicas
+  minReplicas: 2
+  maxReplicas: 20
+  
+  # Scaling metrics
+  metrics:
+    # CPU utilization
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    
+    # Memory utilization
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+    
+    # Custom metric: query latency
+    - type: Pods
+      pods:
+        metric:
+          name: genai_query_latency_seconds
+        target:
+          type: AverageValue
+          averageValue: "2500m"  # 2.5 seconds
+  
+  # Behavior configuration
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+      selectPolicy: Min
+    
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 2
+          periodSeconds: 15
+      selectPolicy: Max
+---
+# PodDisruptionBudget for high availability
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: genai-api-pdb
+  namespace: genai-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: genai-api
+---
+# NetworkPolicy for network isolation
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: genai-network-policy
+  namespace: genai-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: genai-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 9090
+  egress:
+    - to:
+        - podSelector: {}
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 53  # DNS
+        - protocol: UDP
+          port: 53  # DNS
+---
+# PrometheusRule for alerting
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: genai-api-alerts
+  namespace: genai-platform
+spec:
+  groups:
+    - name: genai.rules
+      interval: 30s
+      rules:
+        # High query latency alert
+        - alert: HighQueryLatency
+          expr: histogram_quantile(0.95, genai_query_latency_seconds) > 2.5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High query latency detected"
+            description: "P95 query latency > 2.5s for 5 minutes"
+        
+        # High error rate alert
+        - alert: HighErrorRate
+          expr: |
+            (rate(genai_errors_total[5m]) / (rate(genai_queries_total[5m]) + 1)) > 0.01
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "High error rate detected"
+            description: "Error rate > 1% for 5 minutes"
+        
+        # Circuit breaker open alert
+        - alert: CircuitBreakerOpen
+          expr: genai_circuit_breaker_state == 1
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Circuit breaker is open"
+            description: "Service circuit breaker is in open state"
+        
+        # Cross-tenant leakage alert
+        - alert: CrossTenantLeakageAttempt
+          expr: increase(genai_cross_tenant_leakage_attempts_total[5m]) > 0
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Cross-tenant leakage attempt detected"
+            description: "Potential security violation: cross-tenant data access attempted"
+        
+        # Pod down alert
+        - alert: PodDown
+          expr: count(up{job="genai-api"} == 0) > 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "GenAI API pod is down"
+            description: "One or more GenAI API pods are not responding"

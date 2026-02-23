@@ -1,0 +1,173 @@
+---
+# Redis StatefulSet for caching
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: genai-platform
+  labels:
+    app: redis
+spec:
+  clusterIP: None
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      name: redis
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: genai-platform
+spec:
+  serviceName: redis
+  replicas: 1  # Can be scaled to 3 for cluster mode
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+              name: redis
+          
+          # Redis commands
+          command:
+            - redis-server
+          
+          args:
+            - "--appendonly"
+            - "yes"
+            - "--maxmemory"
+            - "1gb"
+            - "--maxmemory-policy"
+            - "allkeys-lru"
+          
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+          
+          # Health check
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+  
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 10Gi
+---
+# Redis Cluster version (for high availability)
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cluster
+  namespace: genai-platform
+  labels:
+    app: redis-cluster
+spec:
+  ports:
+    - port: 6379
+      name: redis
+  clusterIP: None
+  selector:
+    app: redis-cluster
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-cluster
+  namespace: genai-platform
+spec:
+  serviceName: redis-cluster
+  replicas: 0  # Set to 3 to enable Redis Cluster
+  selector:
+    matchLabels:
+      app: redis-cluster
+  template:
+    metadata:
+      labels:
+        app: redis-cluster
+    spec:
+      containers:
+        - name: redis-cluster
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+              name: client
+            - containerPort: 16379
+              name: gossip
+          
+          command:
+            - redis-server
+          
+          args:
+            - /conf/redis.conf
+            - --cluster-enabled
+            - "yes"
+            - --cluster-config-file
+            - /data/nodes.conf
+            - --cluster-node-timeout
+            - "5000"
+            - --appendonly
+            - "yes"
+            - --maxmemory
+            - "512mb"
+            - --maxmemory-policy
+            - "allkeys-lru"
+          
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "512Mi"
+          
+          volumeMounts:
+            - name: redis-cluster-data
+              mountPath: /data
+            - name: redis-cluster-conf
+              mountPath: /conf
+  
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-cluster-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 5Gi

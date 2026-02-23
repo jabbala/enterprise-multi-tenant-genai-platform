@@ -1,69 +1,107 @@
 # Enterprise Multi-Tenant GenAI Platform
-## Overview
 
-This project demonstrates the architecture and implementation of a scalable, tenant-isolated Enterprise GenAI platform designed to safely deploy RAG-based AI services across multiple business units.
+A production-ready, scalable RAG-based AI service platform with strict multi-tenant isolation, hybrid semantic+lexical search, and enterprise-grade observability.
 
-The system enables:
-* Secure multi-tenant document retrieval
-* Hybrid lexical + semantic search
-* Kubernetes-based autoscaling
-* Enterprise-grade governance enforcement
-* Production-ready observability
+## 🎯 Key Features
 
-## Why Multi-Tenant RAG is Hard
+### Core Capabilities
+- **Secure Multi-Tenant Document Retrieval**: Strict tenant isolation at every layer
+- **Hybrid Search**: BM25 lexical + vector semantic search with intelligent merging
+- **Production-Ready RAG**: Full retrieval-augmented generation pipeline with LLM integration
+- **Zero Cross-Tenant Leakage Target**: Multi-layer isolation guarantees
+- **Enterprise Observability**: Prometheus metrics, OpenTelemetry tracing, structured logging
 
-Deploying RAG across business units introduces:
-* Cross-tenant data leakage risk
-* Uncontrolled cost scaling
-* Uneven latency under load
-* Governance and compliance exposure
-* Index contamination
+### Scaling & Performance
+- **Kubernetes-Native**: HPA auto-scaling, stateless architecture, rolling updates
+- **P95 Latency Target**: < 2.5 seconds with intelligent caching
+- **99.9% Uptime SLA**: Pod disruption budgets, health checks, circuit breakers
+- **≥90% Precision@5**: Hybrid retrieval with reranking
 
-This platform addresses these risks architecturally.
+### Security & Governance
+- **JWT-Based Tenant Resolution**: Token-driven tenant identification
+- **PII Automatic Redaction**: Email, SSN, phone, credit cards, IP addresses
+- **Cross-Tenant Leakage Prevention**: Multi-layer validation and monitoring
+- **Audit Logging**: Complete compliance trail for all operations
+- **Rate Limiting**: Per-tenant request quotas
 
-## Architecture Highlights
-* JWT-based tenant resolution
-* Metadata-enforced retrieval isolation
-* Hybrid BM25 + Vector search
-* Stateless RAG pods
-* Horizontal autoscaling
-* Dedicated ingestion pipeline
-* Observability hooks
-* Audit logging
+## 🚀 Quick Start
 
-## Tenant Isolation Guarantees
-Isolation enforced at:
-1. Authentication layer
-2. Metadata tagging during ingestion
-3. Vector store filtering
-4. Retrieval query enforcement
-5. Application-level validation
+### Local Development
 
-Cross-tenant leakage target: 0 incidents
+```bash
+# Clone and setup
+git clone https://github.com/jabbala/enterprise-multi-tenant-genai-platform.git
+cd enterprise-multi-tenant-genai-platform
+cp .env.example .env
 
-## Retrieval Architecture
-1. BM25 lexical retrieval
-2. Vector similarity search
-3. Merge + rerank
-4. LLM response generation
-5. Guardrail validation
-6. Citation return
+# Start all services
+docker-compose up -d
 
-## Scaling Model
-* Kubernetes HPA-based autoscaling
-* Stateless compute
-* Separate retrieval and ingestion scaling
-* Latency-based alerts
-* Queue-based ingestion scaling
+# Test the API
+curl -X POST http://localhost:8000/api/query \
+  -H "X-Tenant-ID: tenant-001" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is RAG?"}'
+```
 
-Target metrics:
-* ≥ 99.9% uptime
-* < 2.5s P95 latency
-* ≥ 90% Precision@5 retrieval
+## 📦 Production Deployment
 
-## Load Testing
-Simulated multi-tenant workload to validate:
-* No cross-tenant contamination
-* Stable latency under 5k concurrent users
-* Autoscaling effectiveness
-* Error rates < 1%
+```bash
+# Kubernetes deployment
+kubectl apply -f k8s/00-namespace-config.yaml
+kubectl apply -f k8s/01-deployment.yaml
+kubectl apply -f k8s/02-autoscaling.yaml
+kubectl apply -f k8s/03-redis.yaml
+kubectl apply -f k8s/04-opensearch.yaml
+kubectl apply -f k8s/05-monitoring.yaml
+```
+
+## 📚 Documentation
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)**: System design and patterns
+- **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)**: Production deployment
+- **[TESTING_GUIDE.md](TESTING_GUIDE.md)**: Testing strategies
+
+## 🔐 Tenant Isolation
+
+Isolation enforced at 5 layers:
+1. Authentication (JWT validation)
+2. Request validation (Header matching)
+3. Metadata tagging (Index isolation)
+4. Vector store filtering (Per-tenant indices)
+5. Application validation (Cross-tenant checks)
+
+**Target: 0 cross-tenant leakage incidents**
+
+## 📈 Performance Targets
+
+| Metric | Target |
+|--------|--------|
+| P95 Latency | < 2.5s |
+| Uptime | ≥ 99.9% |
+| Error Rate | < 1% |
+| Precision@5 | ≥ 90% |
+
+## 🛠️ Technology Stack
+
+- **Framework**: FastAPI 0.104+ | **Server**: Uvicorn
+- **Vector Search**: FAISS + OpenSearch | **Cache**: Redis 7
+- **Observability**: Prometheus + Jaeger | **Orchestration**: Kubernetes
+
+## 🧪 Load Testing
+
+```bash
+locust -f load_test.py --host=http://localhost:8000 \
+  -u 100 -r 10 --run-time 5m --headless
+```
+
+## 📞 Support
+
+- Issues: Check [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
+- Logs: `kubectl logs deployment/genai-api -n genai-platform`
+- Metrics: http://localhost:9091
+- Traces: http://localhost:16686
+
+---
+
+**Status**: Production-Ready | **Version**: 1.0.0 | **Updated**: Feb 2024

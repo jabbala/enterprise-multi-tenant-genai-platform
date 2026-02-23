@@ -1,0 +1,213 @@
+---
+# Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: genai-service
+  namespace: genai-platform
+---
+# RBAC Role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: genai-role
+  namespace: genai-platform
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+# RBAC RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: genai-rolebinding
+  namespace: genai-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: genai-role
+subjects:
+  - kind: ServiceAccount
+    name: genai-service
+    namespace: genai-platform
+---
+# Service for RAG API
+apiVersion: v1
+kind: Service
+metadata:
+  name: genai-api
+  namespace: genai-platform
+  labels:
+    app: genai-api
+    tier: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: genai-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+  sessionAffinity: None
+---
+# Deployment for RAG API
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: genai-api
+  namespace: genai-platform
+  labels:
+    app: genai-api
+    version: v1
+spec:
+  replicas: 2  # Start with 2, HPA will scale
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: genai-api
+  template:
+    metadata:
+      labels:
+        app: genai-api
+        tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: genai-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      initContainers:
+        - name: wait-for-redis
+          image: busybox:1.28
+          command: ['sh', '-c', 'until nc -z redis.genai-platform 6379; do echo waiting for redis; sleep 2; done;']
+        
+        - name: wait-for-opensearch
+          image: busybox:1.28
+          command: ['sh', '-c', 'until nc -z opensearch.genai-platform 9200; do echo waiting for opensearch; sleep 2; done;']
+      
+      containers:
+        - name: genai-api
+          image: genai-platform:latest
+          imagePullPolicy: Always
+          
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          
+          envFrom:
+            - configMapRef:
+                name: genai-config
+            - secretRef:
+                name: genai-secrets
+          
+          env:
+            # Pod name and namespace for unique identification
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          
+          # Health checks
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2
+          
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 30
+          
+          # Resource management
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+          
+          # Security context
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: false
+          
+          # Volume mounts
+          volumeMounts:
+            - name: faiss-data
+              mountPath: /data/faiss_indexes
+            - name: logs
+              mountPath: /var/log
+      
+      # Node selector (optional)
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - genai-api
+                topologyKey: kubernetes.io/hostname
+      
+      # Volumes
+      volumes:
+        - name: faiss-data
+          emptyDir: {}
+        - name: logs
+          emptyDir: {}
+      
+      terminationGracePeriodSeconds: 30

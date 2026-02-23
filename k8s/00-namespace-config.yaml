@@ -1,0 +1,56 @@
+---
+# Namespace for the application
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: genai-platform
+  labels:
+    app: genai-platform
+---
+# ConfigMap for application configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: genai-config
+  namespace: genai-platform
+data:
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
+  LOG_FORMAT: "json"
+  REDIS_HOST: "redis.genai-platform"
+  REDIS_PORT: "6379"
+  OPENSEARCH_HOST: "opensearch.genai-platform"
+  OPENSEARCH_PORT: "9200"
+  JWT_ALGORITHM: "HS256"
+  LLM_MODEL: "gpt-4-turbo"
+  JAEGER_HOST: "jaeger.genai-platform"
+  JAEGER_PORT: "6831"
+  RETRIEVAL_TOP_K: "5"
+  FAISS_DIMENSION: "1536"
+  BM25_WEIGHT: "0.4"
+  VECTOR_WEIGHT: "0.6"
+  STRUCTURED_LOGGING_ENABLED: "true"
+  OPENTELEMETRY_ENABLED: "true"
+  PROMETHEUS_ENABLED: "true"
+  AUDIT_LOGGING_ENABLED: "true"
+  PII_REDACTION_ENABLED: "true"
+  CROSS_TENANT_LEAKAGE_CHECK_ENABLED: "true"
+  COST_TRACKING_ENABLED: "true"
+---
+# Secret for sensitive data
+apiVersion: v1
+kind: Secret
+metadata:
+  name: genai-secrets
+  namespace: genai-platform
+type: Opaque
+stringData:
+  JWT_SECRET: "your-production-jwt-secret-change-me"
+  LLM_API_KEY: "your-llm-api-key-here"
+  OPENSEARCH_USERNAME: "admin"
+  OPENSEARCH_PASSWORD: "admin123"
+  DB_HOST: "postgres.genai-platform"
+  DB_PORT: "5432"
+  DB_NAME: "genai_platform"
+  DB_USER: "postgres"
+  DB_PASSWORD: "postgres-password-change-me"
